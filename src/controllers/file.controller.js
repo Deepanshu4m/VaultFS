@@ -1,3 +1,4 @@
+import fs from 'fs';
 import pool from '../config/db.js';
 import { getActiveNodes, chunkBuffer, saveChunk, readChunk } from '../services/storage.service.js';
 import path from 'path';
@@ -130,15 +131,46 @@ export const deleteFile = async (req, res) => {
   const { fileId } = req.params;
 
   try {
+    // WHY: Before we delete from DB, we need the disk paths of all chunks
+    // WHAT: Join chunks → chunk_nodes to get every file_path stored on every node
+    // EFFECT: Gives us the full list of physical files to delete from disk
+    const chunkPathsResult = await pool.query(
+      `SELECT cn.file_path 
+       FROM chunk_nodes cn
+       JOIN chunks c ON cn.chunk_id = c.id
+       WHERE c.file_id = $1`,
+      [fileId]
+    );
+
+    // WHY: Actually remove the physical chunk files from disk
+    // WHAT: fs.unlink — async Node.js file deletion
+    // EFFECT: Frees up disk space on the storage nodes; no orphaned files left behind
+    for (const row of chunkPathsResult.rows) {
+      try {
+        await fs.promises.unlink(row.file_path);
+      } catch (err) {
+        // WHY: If a file is already missing from disk (node crashed, manual deletion),
+        //      we don't want that to block the DB cleanup
+        // EFFECT: Logs the issue but continues deleting the rest
+        console.warn(`Could not delete chunk file: ${row.file_path}`, err.message);
+      }
+    }
+
+    // WHY: Now that disk is clean, remove the DB record
+    // WHAT: CASCADE on schema means chunks + chunk_nodes rows auto-delete
+    // EFFECT: DB and disk are both clean — no orphans anywhere
     const result = await pool.query(
       'DELETE FROM files WHERE id = $1 RETURNING *',
       [fileId]
     );
+
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'File not found' });
     }
-    res.status(200).json({ message: 'File deleted' });
+
+    res.status(200).json({ message: 'File deleted successfully' });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 };

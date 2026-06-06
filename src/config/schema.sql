@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 
 CREATE TABLE IF NOT EXISTS nodes (
   id SERIAL PRIMARY KEY,
-  path VARCHAR(255) NOT NULL,
+  path VARCHAR(255) UNIQUE NOT NULL,
   is_active BOOLEAN DEFAULT TRUE
 );
 
@@ -32,3 +32,9 @@ CREATE TABLE IF NOT EXISTS chunk_nodes (
   node_id INTEGER REFERENCES nodes(id),
   file_path VARCHAR(255) NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_chunks_file_id ON chunks(file_id);
+
+CREATE INDEX IF NOT EXISTS idx_chunk_nodes_chunk_id ON chunk_nodes(chunk_id);
+
+CREATE INDEX IF NOT EXISTS idx_files_bucket_id ON files(bucket_id);
