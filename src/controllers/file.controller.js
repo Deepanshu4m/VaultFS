@@ -71,14 +71,12 @@ export const downloadFile = async (req, res) => {
   const { fileId } = req.params;
 
   try {
-    // get file metadata
     const fileResult = await pool.query('SELECT * FROM files WHERE id = $1', [fileId]);
     if (fileResult.rows.length === 0) {
       return res.status(404).json({ message: 'File not found' });
     }
     const file = fileResult.rows[0];
 
-    // get all chunks in order
     const chunksResult = await pool.query(
       'SELECT * FROM chunks WHERE file_id = $1 ORDER BY chunk_index ASC',
       [fileId]
@@ -87,26 +85,47 @@ export const downloadFile = async (req, res) => {
     const buffers = [];
 
     for (const chunk of chunksResult.rows) {
-      // get first available node for this chunk
-      const chunkNodeResult = await pool.query(
-        'SELECT cn.file_path FROM chunk_nodes cn JOIN nodes n ON cn.node_id = n.id WHERE cn.chunk_id = $1 AND n.is_active = TRUE LIMIT 1',
+      const replicasResult = await pool.query(
+        `SELECT cn.file_path, n.id as node_id 
+         FROM chunk_nodes cn 
+         JOIN nodes n ON cn.node_id = n.id 
+         WHERE cn.chunk_id = $1 AND n.is_active = TRUE`,
         [chunk.id]
       );
 
-      if (chunkNodeResult.rows.length === 0) {
-        return res.status(500).json({ message: 'Chunk unavailable' });
+      if (replicasResult.rows.length === 0) {
+        return res.status(500).json({ message: `No active replicas for chunk ${chunk.chunk_index}` });
       }
 
-      const chunkBuffer = readChunk(chunkNodeResult.rows[0].file_path);
-      buffers.push(chunkBuffer);
+      let chunkData = null;
+
+      for (const replica of replicasResult.rows) {
+        try {
+          chunkData = readChunk(replica.file_path);
+          break;
+        } catch (err) {
+          console.warn(`Node ${replica.node_id} failed for chunk ${chunk.chunk_index}, trying next replica...`);
+
+          await pool.query(
+            'UPDATE nodes SET is_active = FALSE WHERE id = $1',
+            [replica.node_id]
+          );
+        }
+      }
+
+      if (!chunkData) {
+        return res.status(500).json({ message: `All replicas failed for chunk ${chunk.chunk_index}` });
+      }
+
+      buffers.push(chunkData);
     }
 
-    // reassemble
     const finalBuffer = Buffer.concat(buffers);
 
     res.setHeader('Content-Type', file.mime_type);
     res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
     res.send(finalBuffer);
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
