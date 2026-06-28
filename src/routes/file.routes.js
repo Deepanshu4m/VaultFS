@@ -1,13 +1,15 @@
 import express from 'express';
-import multer from 'multer';
 import { uploadFile, downloadFile, listFiles, deleteFile } from '../controllers/file.controller.js';
+import { requireApiKey } from '../middlewares/auth.middleware.js';
+import multer from 'multer';
 
-const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.post('/:bucketId/files', upload.single('file'), uploadFile);
-router.get('/:bucketId/files', listFiles);
-router.get('/:bucketId/files/:fileId', downloadFile);
-router.delete('/:bucketId/files/:fileId', deleteFile);
+const router = express.Router();
+
+router.post('/:bucketId/files', requireApiKey, upload.single('file'), uploadFile);
+router.get('/:bucketId/files', requireApiKey, listFiles);
+router.get('/:bucketId/files/:fileId/download', requireApiKey, downloadFile);
+router.delete('/:bucketId/files/:fileId', requireApiKey, deleteFile);
 
 export default router;
