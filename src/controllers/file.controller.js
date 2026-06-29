@@ -24,9 +24,19 @@ export const uploadFile = async (req, res) => {
       return res.status(500).json({ message: 'No storage nodes available' });
     }
 
+    // check if this filename already exists in this bucket
+    const existingFile = await pool.query(
+      'SELECT MAX(version) as max_version FROM files WHERE bucket_id = $1 AND name = $2',
+      [bucketId, originalname]
+    );
+
+    const nextVersion = existingFile.rows[0].max_version
+      ? existingFile.rows[0].max_version + 1
+      : 1;
+
     const fileResult = await pool.query(
-      'INSERT INTO files (bucket_id, name, size, mime_type) VALUES ($1, $2, $3, $4) RETURNING *',
-      [bucketId, originalname, size, mimetype]
+      'INSERT INTO files (bucket_id, name, size, mime_type, version) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [bucketId, originalname, size, mimetype, nextVersion]
     );
     const file = fileResult.rows[0];
 
@@ -36,14 +46,12 @@ export const uploadFile = async (req, res) => {
       const chunk = chunks[i];
       const hash = hashChunk(chunk);
 
-      // check if this exact chunk already exists on disk
       const existing = await pool.query(
         'SELECT * FROM chunks WHERE hash = $1 LIMIT 1',
         [hash]
       );
 
       if (existing.rows.length > 0) {
-        // duplicate chunk — skip disk write, reuse existing file paths
         const existingChunk = existing.rows[0];
 
         const newChunkResult = await pool.query(
@@ -67,7 +75,6 @@ export const uploadFile = async (req, res) => {
         continue;
       }
 
-      // new chunk — write to disk normally
       const chunkResult = await pool.query(
         'INSERT INTO chunks (file_id, chunk_index, size, hash) VALUES ($1, $2, $3, $4) RETURNING *',
         [file.id, i, chunk.length, hash]
@@ -142,11 +149,7 @@ export const downloadFile = async (req, res) => {
           break;
         } catch (err) {
           console.warn(`Node ${replica.node_id} failed for chunk ${chunk.chunk_index}, trying next replica...`);
-
-          await pool.query(
-            'UPDATE nodes SET is_active = FALSE WHERE id = $1',
-            [replica.node_id]
-          );
+          await pool.query('UPDATE nodes SET is_active = FALSE WHERE id = $1', [replica.node_id]);
         }
       }
 
@@ -158,9 +161,85 @@ export const downloadFile = async (req, res) => {
     }
 
     const finalBuffer = Buffer.concat(buffers);
-
     res.setHeader('Content-Type', file.mime_type);
     res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+    res.setHeader('X-File-Version', file.version);
+    res.send(finalBuffer);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const downloadFileByName = async (req, res) => {
+  const { bucketId, filename } = req.params;
+  const { version } = req.query;
+
+  try {
+    let fileResult;
+
+    if (version) {
+      fileResult = await pool.query(
+        'SELECT * FROM files WHERE bucket_id = $1 AND name = $2 AND version = $3',
+        [bucketId, filename, parseInt(version)]
+      );
+    } else {
+      fileResult = await pool.query(
+        'SELECT * FROM files WHERE bucket_id = $1 AND name = $2 ORDER BY version DESC LIMIT 1',
+        [bucketId, filename]
+      );
+    }
+
+    if (fileResult.rows.length === 0) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    const file = fileResult.rows[0];
+
+    const chunksResult = await pool.query(
+      'SELECT * FROM chunks WHERE file_id = $1 ORDER BY chunk_index ASC',
+      [file.id]
+    );
+
+    const buffers = [];
+
+    for (const chunk of chunksResult.rows) {
+      const replicasResult = await pool.query(
+        `SELECT cn.file_path, n.id as node_id 
+         FROM chunk_nodes cn 
+         JOIN nodes n ON cn.node_id = n.id 
+         WHERE cn.chunk_id = $1 AND n.is_active = TRUE`,
+        [chunk.id]
+      );
+
+      if (replicasResult.rows.length === 0) {
+        return res.status(500).json({ message: `No active replicas for chunk ${chunk.chunk_index}` });
+      }
+
+      let chunkData = null;
+
+      for (const replica of replicasResult.rows) {
+        try {
+          chunkData = await readChunk(replica.file_path);
+          break;
+        } catch (err) {
+          console.warn(`Node ${replica.node_id} failed, trying next...`);
+          await pool.query('UPDATE nodes SET is_active = FALSE WHERE id = $1', [replica.node_id]);
+        }
+      }
+
+      if (!chunkData) {
+        return res.status(500).json({ message: `All replicas failed for chunk ${chunk.chunk_index}` });
+      }
+
+      buffers.push(chunkData);
+    }
+
+    const finalBuffer = Buffer.concat(buffers);
+    res.setHeader('Content-Type', file.mime_type);
+    res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+    res.setHeader('X-File-Version', file.version);
     res.send(finalBuffer);
 
   } catch (error) {
@@ -174,7 +253,9 @@ export const listFiles = async (req, res) => {
 
   try {
     const result = await pool.query(
-      'SELECT * FROM files WHERE bucket_id = $1 ORDER BY created_at DESC',
+      `SELECT DISTINCT ON (name) * FROM files 
+       WHERE bucket_id = $1 
+       ORDER BY name, version DESC`,
       [bucketId]
     );
     res.status(200).json(result.rows);
