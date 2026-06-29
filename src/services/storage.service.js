@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import pool from '../config/db.js';
+import crypto from 'crypto';
 
 export const getActiveNodes = async () => {
   const result = await pool.query('SELECT * FROM nodes WHERE is_active = TRUE');
@@ -25,4 +26,8 @@ export const saveChunk = async (nodePath, filename, chunkBuffer) => {
 
 export const readChunk = async (filePath) => {
   return await fs.promises.readFile(filePath);
+};
+
+export const hashChunk = (buffer) => {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
 };

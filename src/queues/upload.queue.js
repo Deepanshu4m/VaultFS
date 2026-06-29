@@ -3,10 +3,7 @@ import { saveChunk } from '../services/storage.service.js';
 import pool from '../config/db.js';
 
 export const replicationQueue = new Bull('replication', {
-  redis: {
-    host: process.env.REDIS_HOST || '127.0.0.1',
-    port: process.env.REDIS_PORT || 6379,
-  },
+  redis: process.env.REDIS_URL,
 });
 
 replicationQueue.process(async (job) => {

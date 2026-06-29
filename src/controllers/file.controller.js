@@ -1,6 +1,6 @@
 import fs from 'fs';
 import pool from '../config/db.js';
-import { getActiveNodes, chunkBuffer, saveChunk, readChunk } from '../services/storage.service.js';
+import { getActiveNodes, chunkBuffer, saveChunk, readChunk, hashChunk } from '../services/storage.service.js';
 import path from 'path';
 import { replicationQueue } from '../queues/upload.queue.js';
 
@@ -34,17 +34,49 @@ export const uploadFile = async (req, res) => {
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
+      const hash = hashChunk(chunk);
 
+      // check if this exact chunk already exists on disk
+      const existing = await pool.query(
+        'SELECT * FROM chunks WHERE hash = $1 LIMIT 1',
+        [hash]
+      );
+
+      if (existing.rows.length > 0) {
+        // duplicate chunk — skip disk write, reuse existing file paths
+        const existingChunk = existing.rows[0];
+
+        const newChunkResult = await pool.query(
+          'INSERT INTO chunks (file_id, chunk_index, size, hash) VALUES ($1, $2, $3, $4) RETURNING *',
+          [file.id, i, chunk.length, hash]
+        );
+        const newChunk = newChunkResult.rows[0];
+
+        const existingReplicas = await pool.query(
+          'SELECT * FROM chunk_nodes WHERE chunk_id = $1',
+          [existingChunk.id]
+        );
+
+        for (const replica of existingReplicas.rows) {
+          await pool.query(
+            'INSERT INTO chunk_nodes (chunk_id, node_id, file_path) VALUES ($1, $2, $3)',
+            [newChunk.id, replica.node_id, replica.file_path]
+          );
+        }
+
+        continue;
+      }
+
+      // new chunk — write to disk normally
       const chunkResult = await pool.query(
-        'INSERT INTO chunks (file_id, chunk_index, size) VALUES ($1, $2, $3) RETURNING *',
-        [file.id, i, chunk.length]
+        'INSERT INTO chunks (file_id, chunk_index, size, hash) VALUES ($1, $2, $3, $4) RETURNING *',
+        [file.id, i, chunk.length, hash]
       );
       const chunkRecord = chunkResult.rows[0];
 
       const replicationNodes = nodes.slice(0, Math.min(2, nodes.length));
       const [primaryNode, ...replicaNodes] = replicationNodes;
 
-      // write to primary node synchronously — upload is not complete until this is done
       const primaryFilename = `file_${file.id}_chunk_${i}_node_${primaryNode.id}`;
       const primaryPath = await saveChunk(primaryNode.path, primaryFilename, chunk);
 
@@ -53,10 +85,8 @@ export const uploadFile = async (req, res) => {
         [chunkRecord.id, primaryNode.id, primaryPath]
       );
 
-      // push secondary replication to Bull queue — happens in background
       for (const node of replicaNodes) {
         const filename = `file_${file.id}_chunk_${i}_node_${node.id}`;
-
         await replicationQueue.add({
           nodePath: node.path,
           nodeId: node.id,

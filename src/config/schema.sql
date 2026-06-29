@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+ALTER TABLE chunks ADD COLUMN IF NOT EXISTS hash VARCHAR(64);
+CREATE INDEX IF NOT EXISTS idx_chunks_hash ON chunks(hash);
+
 CREATE INDEX IF NOT EXISTS idx_chunks_file_id ON chunks(file_id);
 
 CREATE INDEX IF NOT EXISTS idx_chunk_nodes_chunk_id ON chunk_nodes(chunk_id);
