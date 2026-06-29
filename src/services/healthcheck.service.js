@@ -5,9 +5,9 @@ import pool from '../config/db.js';
 const checkNode = async (node) => {
   try {
     const testFile = path.join(node.path, '.healthcheck');
-    fs.writeFileSync(testFile, 'ok');
-    fs.readFileSync(testFile);
-    fs.unlinkSync(testFile);
+    await fs.promises.writeFile(testFile, 'ok');
+    await fs.promises.readFile(testFile);
+    await fs.promises.unlink(testFile);
     return true;
   } catch (err) {
     return false;

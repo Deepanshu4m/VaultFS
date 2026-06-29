@@ -17,12 +17,12 @@ export const chunkBuffer = (buffer, chunkSize = 1024 * 1024) => {
   return chunks;
 };
 
-export const saveChunk = (nodePath, filename, chunkBuffer) => {
+export const saveChunk = async (nodePath, filename, chunkBuffer) => {
   const fullPath = path.join(nodePath, filename);
-  fs.writeFileSync(fullPath, chunkBuffer);
+  await fs.promises.writeFile(fullPath, chunkBuffer);
   return fullPath;
 };
 
-export const readChunk = (filePath) => {
-  return fs.readFileSync(filePath);
+export const readChunk = async (filePath) => {
+  return await fs.promises.readFile(filePath);
 };
