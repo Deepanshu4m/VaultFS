@@ -1,8 +1,12 @@
 import fs from 'fs';
+import crypto from 'crypto';
+import { Redis } from '@upstash/redis';
 import pool from '../config/db.js';
 import { getActiveNodes, chunkBuffer, saveChunk, readChunk, hashChunk } from '../services/storage.service.js';
 import path from 'path';
 import { replicationQueue } from '../queues/upload.queue.js';
+
+const redis = Redis.fromEnv();
 
 export const uploadFile = async (req, res) => {
   const { bucketId } = req.params;
@@ -24,7 +28,6 @@ export const uploadFile = async (req, res) => {
       return res.status(500).json({ message: 'No storage nodes available' });
     }
 
-    // check if this filename already exists in this bucket
     const existingFile = await pool.query(
       'SELECT MAX(version) as max_version FROM files WHERE bucket_id = $1 AND name = $2',
       [bucketId, originalname]
@@ -240,6 +243,100 @@ export const downloadFileByName = async (req, res) => {
     res.setHeader('Content-Type', file.mime_type);
     res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
     res.setHeader('X-File-Version', file.version);
+    res.send(finalBuffer);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const generateSignedUrl = async (req, res) => {
+  const { fileId } = req.params;
+  const { expiresIn } = req.body;
+
+  try {
+    const fileResult = await pool.query('SELECT * FROM files WHERE id = $1', [fileId]);
+    if (fileResult.rows.length === 0) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    const ttl = expiresIn || 300;
+    const token = crypto.randomBytes(16).toString('hex');
+
+    await redis.set(`signed:${token}`, fileId, { ex: ttl });
+
+    const signedUrl = `${req.protocol}://${req.get('host')}/api/buckets/public/download/${token}`;
+
+    res.status(200).json({
+      url: signedUrl,
+      expiresIn: ttl,
+      expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const downloadViaSignedUrl = async (req, res) => {
+  const { token } = req.params;
+
+  try {
+    const fileId = await redis.get(`signed:${token}`);
+
+    if (!fileId) {
+      return res.status(403).json({ message: 'Link expired or invalid' });
+    }
+
+    const fileResult = await pool.query('SELECT * FROM files WHERE id = $1', [fileId]);
+    if (fileResult.rows.length === 0) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    const file = fileResult.rows[0];
+
+    const chunksResult = await pool.query(
+      'SELECT * FROM chunks WHERE file_id = $1 ORDER BY chunk_index ASC',
+      [file.id]
+    );
+
+    const buffers = [];
+
+    for (const chunk of chunksResult.rows) {
+      const replicasResult = await pool.query(
+        `SELECT cn.file_path, n.id as node_id 
+         FROM chunk_nodes cn 
+         JOIN nodes n ON cn.node_id = n.id 
+         WHERE cn.chunk_id = $1 AND n.is_active = TRUE`,
+        [chunk.id]
+      );
+
+      if (replicasResult.rows.length === 0) {
+        return res.status(500).json({ message: `No active replicas for chunk ${chunk.chunk_index}` });
+      }
+
+      let chunkData = null;
+
+      for (const replica of replicasResult.rows) {
+        try {
+          chunkData = await readChunk(replica.file_path);
+          break;
+        } catch (err) {
+          await pool.query('UPDATE nodes SET is_active = FALSE WHERE id = $1', [replica.node_id]);
+        }
+      }
+
+      if (!chunkData) {
+        return res.status(500).json({ message: `All replicas failed for chunk ${chunk.chunk_index}` });
+      }
+
+      buffers.push(chunkData);
+    }
+
+    const finalBuffer = Buffer.concat(buffers);
+    res.setHeader('Content-Type', file.mime_type);
+    res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
     res.send(finalBuffer);
 
   } catch (error) {

@@ -1,5 +1,5 @@
 import express from 'express';
-import { uploadFile, downloadFile, downloadFileByName, listFiles, deleteFile } from '../controllers/file.controller.js';
+import { uploadFile, downloadFile, downloadFileByName, listFiles, deleteFile, generateSignedUrl, downloadViaSignedUrl } from '../controllers/file.controller.js';
 import { requireApiKey } from '../middlewares/auth.middleware.js';
 import multer from 'multer';
 
@@ -11,6 +11,8 @@ router.post('/:bucketId/files', requireApiKey, upload.single('file'), uploadFile
 router.get('/:bucketId/files', requireApiKey, listFiles);
 router.get('/:bucketId/files/:fileId/download', requireApiKey, downloadFile);
 router.get('/:bucketId/files/:filename/version', requireApiKey, downloadFileByName);
+router.post('/:bucketId/files/:fileId/signed-url', requireApiKey, generateSignedUrl);
+router.get('/public/download/:token', downloadViaSignedUrl);
 router.delete('/:bucketId/files/:fileId', requireApiKey, deleteFile);
 
 export default router;
