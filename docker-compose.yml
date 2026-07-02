@@ -1,0 +1,35 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: vaultfs
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: ${REDIS_URL}
+      UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL}
+      UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN}
+      NODE1_PATH: ./storage/node1
+      NODE2_PATH: ./storage/node2
+      NODE3_PATH: ./storage/node3
+    depends_on:
+      - postgres
+    volumes:
+      - ./storage:/app/storage
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: vaultfs
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/config/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+
+volumes:
+  postgres_data:
