@@ -44,8 +44,12 @@ CREATE TABLE IF NOT EXISTS api_keys (
 ALTER TABLE chunks ADD COLUMN IF NOT EXISTS hash VARCHAR(64);
 CREATE INDEX IF NOT EXISTS idx_chunks_hash ON chunks(hash);
 
+ALTER TABLE files ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
+
 CREATE INDEX IF NOT EXISTS idx_chunks_file_id ON chunks(file_id);
 
 CREATE INDEX IF NOT EXISTS idx_chunk_nodes_chunk_id ON chunk_nodes(chunk_id);
 
 CREATE INDEX IF NOT EXISTS idx_files_bucket_id ON files(bucket_id);
+
+CREATE INDEX IF NOT EXISTS idx_files_bucket_name_version ON files(bucket_id, name, version);
