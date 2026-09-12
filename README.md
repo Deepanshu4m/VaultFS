@@ -1,4 +1,4 @@
-# VaultFS 🗄️
+# VaultFS 
 
 VaultFS is a lightweight, distributed file storage system built from scratch in Node.js. Designed as an educational, self-hosted clone of the core concepts behind Amazon S3, VaultFS implements advanced storage features including **chunked storage**, **content-addressed deduplication**, **multi-node replication**, and **automatic failover**.
 
@@ -10,7 +10,7 @@ Instead of merely saving files to a local disk, VaultFS addresses complex storag
 
 ---
 
-## 🏗 System Architecture
+## System Architecture
 
 VaultFS follows a distributed architecture with a single API entry point, a relational metadata store, and multiple physical (or logical) storage nodes connected via a background job queue for eventual consistency.
 
@@ -51,7 +51,7 @@ A background service (`healthcheck.service.js`) runs every 30 seconds, writing, 
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 | Component | Technology |
 |---|---|
@@ -66,7 +66,7 @@ A background service (`healthcheck.service.js`) runs every 30 seconds, writing, 
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Docker & Docker Compose (Recommended)
@@ -109,7 +109,7 @@ npm run dev
 
 ---
 
-## ⚙️ Environment Variables
+## Environment Variables
 
 Create a `.env` file in the root directory:
 
@@ -133,7 +133,7 @@ UPSTASH_REDIS_REST_TOKEN=your_token
 
 ---
 
-## 📡 API Reference
+## API Reference
 
 ### 1. Authentication
 Generate an API key to access protected routes.
@@ -208,7 +208,7 @@ VaultFS uses PostgreSQL with six core tables:
 
 ---
 
-## ⚠️ Known Limitations
+## Known Limitations
 
 - **No Load Balancing:** Primary and replica nodes are currently selected based on database order rather than capacity or latency.
 - **Plaintext API Keys:** API keys are stored in plaintext. This should be updated to use hashed storage for production environments.
@@ -216,5 +216,5 @@ VaultFS uses PostgreSQL with six core tables:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 Contributions are welcome! Feel free to open an issue or submit a Pull Request if you'd like to improve the load balancing, add queue retries, or enhance security.
