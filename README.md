@@ -181,22 +181,22 @@ curl -X POST http://localhost:3000/api/buckets/1/files/<file_id>/signed-url \
 
 ### 5. API Endpoints Summary
 
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/health` | Liveness check | ❌ |
-| `POST` | `/api/auth/generate-key` | Issue a new API key | ❌ |
-| `POST` | `/api/buckets` | Create a new bucket | ✅ |
-| `GET` | `/api/buckets` | List all buckets | ✅ |
-| `POST` | `/api/buckets/:bucketId/files` | Upload a file | ✅ |
-| `GET` | `/api/buckets/:bucketId/files/:filename/version` | Download file by name (supports `?version=N`) | ✅ |
-| `POST` | `/api/buckets/:bucketId/files/:fileId/signed-url` | Generate public download link | ✅ |
-| `GET` | `/api/buckets/public/download/:token` | Download via signed token | ❌ |
-| `POST` | `/api/nodes` | Register a new storage node | ✅ |
-| `GET` | `/api/stats` | Retrieve system stats & chunk distribution | ✅ |
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Liveness check 
+| `POST` | `/api/auth/generate-key` | Issue a new API key |
+| `POST` | `/api/buckets` | Create a new bucket |
+| `GET` | `/api/buckets` | List all buckets |
+| `POST` | `/api/buckets/:bucketId/files` | Upload a file |
+| `GET` | `/api/buckets/:bucketId/files/:filename/version` | Download file by name (supports `?version=N`) |
+| `POST` | `/api/buckets/:bucketId/files/:fileId/signed-url` | Generate public download link |
+| `GET` | `/api/buckets/public/download/:token` | Download via signed token |
+| `POST` | `/api/nodes` | Register a new storage node |
+| `GET` | `/api/stats` | Retrieve system stats & chunk distribution |
 
 ---
 
-## 🗄️ Database Schema
+## Database Schema
 
 VaultFS uses PostgreSQL with six core tables:
 - **`buckets`**: Namespaces for files.
